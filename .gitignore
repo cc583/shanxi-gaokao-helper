@@ -1,0 +1,8 @@
+.tools/
+*.log
+*.err.log
+*.zip
+*.bat
+*.ps1
+__pycache__/
+*.pyc

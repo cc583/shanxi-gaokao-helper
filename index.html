@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>陕西高考志愿填报助手</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">陕西省 · 新高考志愿辅助</p>
+      <h1>高考志愿填报助手</h1>
+    </div>
+    <div class="source-pill">官方数据已内置</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel input-panel" aria-label="考生信息">
+      <div class="panel-head">
+        <h2>考生信息</h2>
+        <button id="resetBtn" class="icon-btn" type="button" title="清空">↺</button>
+      </div>
+
+      <div class="field-row">
+        <label>
+          首选科目
+          <select id="track">
+            <option value="physical">物理</option>
+            <option value="history">历史</option>
+          </select>
+        </label>
+        <label>
+          高考分数
+          <input id="score" type="number" inputmode="numeric" min="0" max="750" placeholder="例如 568">
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label>
+          全省位次
+          <input id="rank" type="number" inputmode="numeric" min="1" placeholder="可不填，按一分段估算">
+        </label>
+        <label>
+          目标批次
+          <select id="batch">
+            <option value="本科">本科</option>
+            <option value="高职专科">高职专科</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label>
+          院校关键词
+          <input id="schoolKeyword" type="search" placeholder="如 西安、师范、医学">
+        </label>
+        <label>
+          专业关键词
+          <input id="majorKeyword" type="search" placeholder="导入专业组数据后生效">
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label>
+          地区偏好
+          <input id="cityKeyword" type="search" placeholder="如 陕西、北京、江苏">
+        </label>
+        <label>
+          风险偏好
+          <select id="riskMode">
+            <option value="balanced">均衡</option>
+            <option value="bold">更想冲</option>
+            <option value="safe">更稳妥</option>
+          </select>
+        </label>
+      </div>
+
+      <button id="runBtn" class="primary" type="button">生成推荐</button>
+
+      <div class="notice">
+        <strong>真实依据：</strong>2025 官方分数线和一分段已用于定位；2024 官方投档表只作历史参照。截至 2026-06-23，2026 年成绩、控制线和一分段仍待官方 6 月 25 日公布；导入 2025/2026 官方专业组表后会优先使用。
+      </div>
+    </section>
+
+    <section class="panel summary-panel" aria-label="定位结果">
+      <div class="panel-head">
+        <h2>定位结果</h2>
+        <span id="dataBadge" class="badge">等待输入</span>
+      </div>
+      <div class="stats">
+        <div>
+          <span>估算位次</span>
+          <strong id="rankOut">--</strong>
+        </div>
+        <div>
+          <span>本科线差</span>
+          <strong id="underLineOut">--</strong>
+        </div>
+        <div>
+          <span>特控线差</span>
+          <strong id="specialLineOut">--</strong>
+        </div>
+      </div>
+      <div id="advice" class="advice">输入分数后，我会按陕西官方一分段定位，并给出冲稳保分层。</div>
+    </section>
+
+    <section class="panel import-panel" aria-label="导入数据">
+      <div class="panel-head">
+        <h2>导入官方表</h2>
+        <button id="downloadTemplateBtn" class="ghost" type="button">下载模板</button>
+      </div>
+      <p class="muted">可导入陕西 2025/2026 院校专业组、招生计划或正式投档 CSV。导入后会优先按新高考专业组数据推荐。</p>
+      <input id="csvFile" type="file" accept=".csv,text/csv">
+      <div id="importStatus" class="mini-status">未导入自定义数据</div>
+    </section>
+
+    <section class="results-section" aria-label="推荐结果">
+      <div class="section-head">
+        <div>
+          <h2>推荐结果</h2>
+          <p id="resultMeta">先填写分数并生成推荐。</p>
+        </div>
+        <div class="actions">
+          <button id="exportBtn" class="ghost" type="button">导出志愿表</button>
+          <button id="clearPlanBtn" class="ghost" type="button">清空志愿表</button>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tier="all" type="button">全部</button>
+        <button class="tab" data-tier="冲" type="button">冲</button>
+        <button class="tab" data-tier="稳" type="button">稳</button>
+        <button class="tab" data-tier="保" type="button">保</button>
+      </div>
+
+      <div id="results" class="cards"></div>
+    </section>
+
+    <section class="plan-section" aria-label="志愿表">
+      <div class="section-head">
+        <div>
+          <h2>我的志愿表</h2>
+          <p>本科普通批可参考 45 个院校专业组容量；最终以陕西官方填报系统为准。</p>
+        </div>
+        <span id="planCount" class="badge">0 / 45</span>
+      </div>
+      <div id="planList" class="plan-list"></div>
+    </section>
+
+    <section class="sources-section" aria-label="数据来源">
+      <div class="section-head">
+        <div>
+          <h2>数据来源</h2>
+          <p>所有内置数据均来自公开官方页面，程序会标注使用场景。</p>
+        </div>
+      </div>
+      <div id="sources" class="sources"></div>
+    </section>
+  </main>
+
+  <script src="data/official-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
