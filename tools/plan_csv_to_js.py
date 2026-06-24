@@ -21,7 +21,8 @@ def main():
         if path.exists():
             for row in read_csv(path):
                 plan = int(row.get("计划数") or 0)
-                if plan <= 0:
+                major = row.get("专业", "")
+                if plan <= 0 or "院校地址" in major:
                     continue
                 rows.append({
                     "year": row.get("年份", "2026"),
@@ -30,7 +31,7 @@ def main():
                     "schoolCode": row.get("院校代码", ""),
                     "school": row.get("院校名称", ""),
                     "group": row.get("院校专业组", ""),
-                    "major": row.get("专业", ""),
+                    "major": major,
                     "subject": row.get("再选科目", ""),
                     "plan": plan,
                     "source": row.get("来源", ""),

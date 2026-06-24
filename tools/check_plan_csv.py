@@ -13,3 +13,15 @@ for path in [Path("output/2026_history_plan.csv"), Path("output/2026_physical_pl
     print(path.name, "rows", len(rows), "schools", len(schools), "empty_school", empty_school, "empty_group", empty_group, "plan_sum", plan_sum, "batches", dict(batches))
     for row in rows[:5]:
         print(" ", row["院校代码"], row["院校名称"], row["院校专业组"], row["专业"], row["计划数"])
+
+    suspicious = [
+        r for r in rows
+        if "院校地址" in r["专业"]
+        or len(r["专业"]) > 80
+        or not r["院校代码"]
+        or not r["院校名称"]
+        or not r["专业代码"]
+    ]
+    print(" suspicious", len(suspicious))
+    for row in suspicious[:20]:
+        print("  suspicious:", row["院校代码"], row["院校名称"], row["院校专业组"], row["专业代码"], row["专业"], row["计划数"])
