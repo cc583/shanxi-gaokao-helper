@@ -2,7 +2,11 @@
   const data = window.SX_DATA || { admissions: [], segments: {}, sources: [], rules: {}, controlLines: {} };
   let importedRows = [];
   let builtInPlanRows = null;
+  let builtInAdmissionRows = null;
+  let builtInMajorRows = null;
   let planLoadPromise = null;
+  let admissionLoadPromise = null;
+  let majorLoadPromise = null;
   let currentTier = "all";
   let currentResults = [];
   let resultCounts = {};
@@ -135,18 +139,52 @@
       els.dataBadge.textContent = "加载计划中";
       const response = await fetch("data/plan-2026.js", { cache: "force-cache" });
       if (!response.ok) throw new Error("2026 招生计划加载失败");
-      const text = await response.text();
-      const payload = text.split("=", 2)[1]?.trim().replace(/;\s*$/, "") || "[]";
-      builtInPlanRows = JSON.parse(payload).map(normalizePlanRecord);
+      builtInPlanRows = parseJsPayload(await response.text()).map(normalizePlanRecord);
       return builtInPlanRows;
     })();
     return planLoadPromise;
   }
 
+  async function loadBuiltInAdmissions() {
+    if (builtInAdmissionRows) return builtInAdmissionRows;
+    if (admissionLoadPromise) return admissionLoadPromise;
+    admissionLoadPromise = (async () => {
+      els.dataBadge.textContent = "加载2025录取线";
+      const response = await fetch("data/admission-2025.js", { cache: "force-cache" });
+      if (!response.ok) throw new Error("2025 院校专业组录取线加载失败");
+      builtInAdmissionRows = parseJsPayload(await response.text()).map(normalizeAdmissionRecord);
+      return builtInAdmissionRows;
+    })();
+    return admissionLoadPromise;
+  }
+
+  async function loadBuiltInMajors() {
+    if (builtInMajorRows) return builtInMajorRows;
+    if (majorLoadPromise) return majorLoadPromise;
+    majorLoadPromise = (async () => {
+      els.dataBadge.textContent = "加载专业录取线";
+      const response = await fetch("data/major-2025.js", { cache: "force-cache" });
+      if (!response.ok) throw new Error("2025 专业录取线加载失败");
+      builtInMajorRows = parseJsPayload(await response.text()).map(normalizeAdmissionRecord);
+      return builtInMajorRows;
+    })();
+    return majorLoadPromise;
+  }
+
+  function parseJsPayload(text) {
+    const start = text.indexOf("=");
+    const payload = start >= 0 ? text.slice(start + 1).trim().replace(/;\s*$/, "") : "[]";
+    return JSON.parse(payload);
+  }
+
   async function getCandidateRows(track, batchValue) {
     const imported = importedRows.filter((row) => row.track === track || !row.track);
+    const admissions2025 = (await loadBuiltInAdmissions()).filter((row) => row.track === track || !row.track);
+    const majorRows = els.majorKeyword.value.trim()
+      ? (await loadBuiltInMajors()).filter((row) => row.track === track || !row.track)
+      : [];
     const builtInPlans = (await loadBuiltInPlans()).filter((row) => row.track === track || !row.track);
-    const builtIn = data.admissions
+    const historical2024 = data.admissions
       .filter((row) => row.subject === mapTrackToLegacy(track))
       .map((row) => ({
         id: `official-${row.year}-${row.batch}-${row.schoolCode}-${row.subject}`,
@@ -169,7 +207,36 @@
       }));
 
     const batchNames = mapBatch(batchValue);
-    return [...imported, ...builtInPlans, ...builtIn].filter((row) => batchNames.some((name) => String(row.batch || "").includes(name)));
+    const primaryRows = [...imported, ...admissions2025, ...majorRows, ...builtInPlans]
+      .filter((row) => batchNames.some((name) => String(row.batch || "").includes(name)));
+    const historicalRows = historical2024.filter((row) => batchNames.some((name) => String(row.batch || "").includes(name)));
+    return { primaryRows, historicalRows };
+  }
+
+  function normalizeAdmissionRecord(record) {
+    return {
+      id: record.id,
+      year: record.year || "2025",
+      school: record.school || "",
+      schoolCode: record.schoolCode || "",
+      group: record.group || "",
+      major: record.major || "",
+      majorCode: record.majorCode || "",
+      subjectReq: record.subjectReq || "",
+      admissionType: record.admissionType || "",
+      note: record.note || "",
+      tags: record.tags || "",
+      track: record.track || "",
+      batch: record.batch || "本科批",
+      plan: toNumber(record.plan),
+      countLabel: record.countLabel || "录取数",
+      minScore: toNumber(record.minScore),
+      minRank: toNumber(record.minRank),
+      city: record.city || "",
+      schoolType: record.schoolType || "",
+      source: record.source || "22-25年全国高校在陕西的录取分数.xlsx",
+      dataType: record.dataType || "2025 录取线"
+    };
   }
 
   function normalizePlanRecord(record, index) {
@@ -189,9 +256,13 @@
       track,
       batch: record.batch || record["批次"] || "本科",
       plan: toNumber(record.plan || record["计划数"]),
+      countLabel: "计划数",
       minScore: toNumber(record.minScore || record["最低分"]),
       minRank: toNumber(record.minRank || record["最低位次"]),
       city: record.city || record["城市"] || "",
+      subjectReq: record.subjectReq || record["再选科目"] || record.subject || "",
+      majorCode: record.majorCode || record["专业代码"] || "",
+      note: record.note || record["备注"] || "",
       source: record.source || record["来源"] || "2026 年普通高校在陕招生计划汇编 OCR",
       dataType: "2026 招生计划"
     };
@@ -229,9 +300,11 @@
       els.rankOut.textContent = formatNumber(userRank);
       els.underLineOut.textContent = score ? `${score - controls.undergraduate} 分` : "--";
       els.specialLineOut.textContent = score ? `${score - controls.special} 分` : "--";
-      els.dataBadge.textContent = importedRows.length ? "已含导入数据" : "官方+2026计划";
+      els.dataBadge.textContent = importedRows.length ? "已含导入数据" : "2025录取+2026计划";
 
-      const pool = applyFilters(await getCandidateRows(track, els.batch.value));
+      const candidates = await getCandidateRows(track, els.batch.value);
+      let pool = applyFilters(candidates.primaryRows);
+      if (!pool.length) pool = applyFilters(candidates.historicalRows);
       currentResults = pool
         .map((row) => ({ ...row, risk: classify(row, userRank, score, els.riskMode.value) }))
         .filter((row) => row.risk.tier !== "过低")
@@ -267,7 +340,11 @@
 
   function resultSummary() {
     const parts = ["冲", "稳", "保", "计划"].map((tier) => `${tier}${resultCounts[tier] || 0}`);
-    return `共筛出 ${currentResults.length} 条（${parts.join(" / ")}）。2026 招生计划已内置，2025 官方分数线/一分段用于定位，2024 投档表只作历史参照。`;
+    const hasMajor = currentResults.some((row) => row.dataType === "2025 专业录取线");
+    const hasHistorical = currentResults.some((row) => row.dataType === "2024 官方投档历史参考");
+    const detail = hasMajor ? "专业关键词已启用 2025 专业录取线。" : "推荐主依据为 2025 院校专业组录取线。";
+    const fallback = hasHistorical ? "本次包含少量 2024 官方投档兜底参考。" : "2024 投档表仅在没有 2025/2026 匹配时兜底。";
+    return `共筛出 ${currentResults.length} 条（${parts.join(" / ")}）。${detail}2026 招生计划用于核对可报专业和计划数。${fallback}`;
   }
 
   function buildAdvice(track, score, rank, controls) {
@@ -293,20 +370,39 @@
         <div class="card-head">
           <div>
             <div class="school">${escapeHtml(row.school)}</div>
-            <div class="card-note">${escapeHtml([row.group, row.major, row.city].filter(Boolean).join(" · ") || row.dataType)}</div>
+            <div class="card-note">${escapeHtml(cardSubtitle(row))}</div>
           </div>
           <span class="tier tier-${row.risk.tier}">${row.risk.tier}</span>
         </div>
         <dl>
           <div><dt>最低分</dt><dd>${formatNumber(row.minScore)}</dd></div>
           <div><dt>最低位次</dt><dd>${formatNumber(row.minRank)}</dd></div>
-          <div><dt>计划数</dt><dd>${formatNumber(row.plan)}</dd></div>
-          <div><dt>依据</dt><dd>${escapeHtml(String(row.year || ""))}</dd></div>
+          <div><dt>${escapeHtml(row.countLabel || "计划数")}</dt><dd>${formatNumber(row.plan)}</dd></div>
+          <div><dt>数据依据</dt><dd>${escapeHtml(row.dataType || row.year || "")}</dd></div>
         </dl>
-        <div class="card-note">${escapeHtml(row.risk.reason)} · ${escapeHtml(row.source || row.dataType || "自定义数据")}</div>
+        <div class="card-note">${escapeHtml(cardFootnote(row))}</div>
         <button class="add-btn" type="button" data-add="${escapeHtml(row.id)}">加入志愿表</button>
       </article>
     `).join("");
+  }
+
+  function cardSubtitle(row) {
+    return [
+      row.group,
+      row.major,
+      row.subjectReq,
+      row.admissionType,
+      row.city,
+      row.tags
+    ].filter(Boolean).join(" · ") || row.dataType;
+  }
+
+  function cardFootnote(row) {
+    return [
+      row.risk.reason,
+      row.note,
+      row.source || row.dataType || "自定义数据"
+    ].filter(Boolean).join(" · ");
   }
 
   function visibleRows() {
@@ -336,9 +432,28 @@
   }
 
   function renderSources() {
-    els.sources.innerHTML = (data.sources || []).map((source) => `
+    const localSources = [
+      {
+        title: "22-25年全国高校在陕西的院校录取分数.xlsx",
+        usedFor: "2025 院校专业组最低分、最低位次，作为冲稳保主依据",
+        accessed: "2026-06-25"
+      },
+      {
+        title: "22-25年全国高校在陕西的专业录取分数.xlsx",
+        usedFor: "2025 专业最低分、最低位次，用于专业关键词检索",
+        accessed: "2026-06-25"
+      },
+      {
+        title: "2026年历史类/物理类在陕招生计划.pdf",
+        usedFor: "2026 招生计划，用于核对今年可报专业、专业组和计划数",
+        accessed: "2026-06-24"
+      }
+    ];
+    els.sources.innerHTML = [...localSources, ...(data.sources || [])].map((source) => `
       <div class="source-card">
-        <a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.title)}</a>
+        ${source.url
+          ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.title)}</a>`
+          : `<strong>${escapeHtml(source.title)}</strong>`}
         <div class="muted">${escapeHtml(source.usedFor)} · 访问日期：${escapeHtml(source.accessed)}</div>
       </div>
     `).join("");
@@ -359,6 +474,7 @@
       tier: row.risk.tier,
       minScore: row.minScore,
       minRank: row.minRank,
+      dataType: row.dataType,
       source: row.source
     });
     savePlan();
