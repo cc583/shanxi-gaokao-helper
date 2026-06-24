@@ -1,8 +1,11 @@
 (function () {
   const data = window.SX_DATA || { admissions: [], segments: {}, sources: [], rules: {}, controlLines: {} };
   let importedRows = [];
+  let builtInPlanRows = null;
+  let planLoadPromise = null;
   let currentTier = "all";
   let currentResults = [];
+  let resultCounts = {};
   let plan = loadPlan();
 
   const $ = (id) => document.getElementById(id);
@@ -125,11 +128,24 @@
     return value > 0 ? `+${formatNumber(value)}` : formatNumber(value);
   }
 
-  function getCandidateRows(track, batchValue) {
+  async function loadBuiltInPlans() {
+    if (builtInPlanRows) return builtInPlanRows;
+    if (planLoadPromise) return planLoadPromise;
+    planLoadPromise = (async () => {
+      els.dataBadge.textContent = "加载计划中";
+      const response = await fetch("data/plan-2026.js", { cache: "force-cache" });
+      if (!response.ok) throw new Error("2026 招生计划加载失败");
+      const text = await response.text();
+      const payload = text.split("=", 2)[1]?.trim().replace(/;\s*$/, "") || "[]";
+      builtInPlanRows = JSON.parse(payload).map(normalizePlanRecord);
+      return builtInPlanRows;
+    })();
+    return planLoadPromise;
+  }
+
+  async function getCandidateRows(track, batchValue) {
     const imported = importedRows.filter((row) => row.track === track || !row.track);
-    const builtInPlans = (window.SX_2026_PLANS || [])
-      .map(normalizePlanRecord)
-      .filter((row) => row.track === track || !row.track);
+    const builtInPlans = (await loadBuiltInPlans()).filter((row) => row.track === track || !row.track);
     const builtIn = data.admissions
       .filter((row) => row.subject === mapTrackToLegacy(track))
       .map((row) => ({
@@ -194,40 +210,64 @@
     });
   }
 
-  function run() {
+  async function run() {
     const track = els.track.value;
     const score = Number(els.score.value);
     const enteredRank = Number(els.rank.value);
     const userRank = enteredRank || scoreToRank(track, score);
     const controls = getControls(track);
+    const hasKeyword = [els.schoolKeyword.value, els.majorKeyword.value, els.cityKeyword.value].some((value) => value.trim());
 
-    if (!score && !enteredRank) {
-      els.advice.textContent = "请至少输入分数或位次。";
+    if (!score && !enteredRank && !hasKeyword) {
+      els.advice.textContent = "请至少输入分数、位次或一个关键词。";
       return;
     }
 
-    els.rankOut.textContent = formatNumber(userRank);
-    els.underLineOut.textContent = score ? `${score - controls.undergraduate} 分` : "--";
-    els.specialLineOut.textContent = score ? `${score - controls.special} 分` : "--";
-    els.dataBadge.textContent = importedRows.length ? "已含导入数据" : "官方历史库";
+    els.runBtn.disabled = true;
+    els.runBtn.textContent = "生成中...";
+    try {
+      els.rankOut.textContent = formatNumber(userRank);
+      els.underLineOut.textContent = score ? `${score - controls.undergraduate} 分` : "--";
+      els.specialLineOut.textContent = score ? `${score - controls.special} 分` : "--";
+      els.dataBadge.textContent = importedRows.length ? "已含导入数据" : "官方+2026计划";
 
-    const pool = applyFilters(getCandidateRows(track, els.batch.value));
-    currentResults = pool
-      .map((row) => ({ ...row, risk: classify(row, userRank, score, els.riskMode.value) }))
-      .filter((row) => row.risk.tier !== "过低")
-      .filter((row) => row.risk.tier !== "高风险" || els.riskMode.value === "bold")
-      .sort((a, b) => {
-        const order = { "冲": 1, "稳": 2, "保": 3, "计划": 4, "高风险": 5 };
-        return order[a.risk.tier] - order[b.risk.tier]
-          || a.risk.sortScore - b.risk.sortScore
-          || Number(b.year || 0) - Number(a.year || 0)
-          || Number(b.minScore || 0) - Number(a.minScore || 0);
-      })
-      .slice(0, 180);
+      const pool = applyFilters(await getCandidateRows(track, els.batch.value));
+      currentResults = pool
+        .map((row) => ({ ...row, risk: classify(row, userRank, score, els.riskMode.value) }))
+        .filter((row) => row.risk.tier !== "过低")
+        .filter((row) => row.risk.tier !== "高风险" || els.riskMode.value === "bold")
+        .sort(resultSort);
+      resultCounts = countByTier(currentResults);
 
-    els.advice.innerHTML = buildAdvice(track, score, userRank, controls);
-    els.resultMeta.textContent = `共筛出 ${currentResults.length} 条。2025 官方分数线/一分段用于定位；院校录取参考优先使用导入的 2025/2026 专业组数据，内置 2024 投档表只作历史参照。`;
-    renderResults();
+      els.advice.innerHTML = buildAdvice(track, score, userRank, controls);
+      els.resultMeta.textContent = resultSummary();
+      renderResults();
+    } catch (error) {
+      els.advice.textContent = error.message || "生成推荐时遇到问题。";
+    } finally {
+      els.runBtn.disabled = false;
+      els.runBtn.textContent = "生成推荐";
+    }
+  }
+
+  function resultSort(a, b) {
+    const order = { "冲": 1, "稳": 2, "保": 3, "计划": 4, "高风险": 5 };
+    return order[a.risk.tier] - order[b.risk.tier]
+      || a.risk.sortScore - b.risk.sortScore
+      || Number(b.year || 0) - Number(a.year || 0)
+      || Number(b.minScore || 0) - Number(a.minScore || 0);
+  }
+
+  function countByTier(rows) {
+    return rows.reduce((acc, row) => {
+      acc[row.risk.tier] = (acc[row.risk.tier] || 0) + 1;
+      return acc;
+    }, {});
+  }
+
+  function resultSummary() {
+    const parts = ["冲", "稳", "保", "计划"].map((tier) => `${tier}${resultCounts[tier] || 0}`);
+    return `共筛出 ${currentResults.length} 条（${parts.join(" / ")}）。2026 招生计划已内置，2025 官方分数线/一分段用于定位，2024 投档表只作历史参照。`;
   }
 
   function buildAdvice(track, score, rank, controls) {
@@ -242,7 +282,7 @@
   }
 
   function renderResults() {
-    const rows = currentTier === "all" ? currentResults : currentResults.filter((row) => row.risk.tier === currentTier);
+    const rows = visibleRows();
     if (!rows.length) {
       els.results.innerHTML = `<div class="empty">没有符合条件的结果。可以放宽关键词、换风险偏好，或导入更完整的院校专业组数据。</div>`;
       return;
@@ -267,6 +307,14 @@
         <button class="add-btn" type="button" data-add="${escapeHtml(row.id)}">加入志愿表</button>
       </article>
     `).join("");
+  }
+
+  function visibleRows() {
+    if (currentTier !== "all") {
+      return currentResults.filter((row) => row.risk.tier === currentTier).slice(0, 180);
+    }
+    const tiers = ["冲", "稳", "保", "计划"];
+    return tiers.flatMap((tier) => currentResults.filter((row) => row.risk.tier === tier).slice(0, 45));
   }
 
   function renderPlan() {

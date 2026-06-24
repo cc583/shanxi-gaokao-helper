@@ -157,6 +157,11 @@ select:focus {
   font-weight: 700;
 }
 
+.primary:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .ghost,
 .icon-btn {
   height: 36px;
