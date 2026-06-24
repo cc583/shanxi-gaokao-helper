@@ -69,6 +69,9 @@
   function classify(row, userRank, userScore, mode) {
     const minRank = Number(row.minRank || 0);
     const minScore = Number(row.minScore || 0);
+    if (!minRank && !minScore && Number(row.plan || 0)) {
+      return riskResult("计划", 0, 0, "2026 招生计划，需结合往年录取位次判断");
+    }
     if (!minRank || !userRank) {
       const diff = userScore - minScore;
       const windows = scoreWindows(mode);
@@ -124,6 +127,9 @@
 
   function getCandidateRows(track, batchValue) {
     const imported = importedRows.filter((row) => row.track === track || !row.track);
+    const builtInPlans = (window.SX_2026_PLANS || [])
+      .map(normalizePlanRecord)
+      .filter((row) => row.track === track || !row.track);
     const builtIn = data.admissions
       .filter((row) => row.subject === mapTrackToLegacy(track))
       .map((row) => ({
@@ -147,7 +153,32 @@
       }));
 
     const batchNames = mapBatch(batchValue);
-    return [...imported, ...builtIn].filter((row) => batchNames.some((name) => String(row.batch || "").includes(name)));
+    return [...imported, ...builtInPlans, ...builtIn].filter((row) => batchNames.some((name) => String(row.batch || "").includes(name)));
+  }
+
+  function normalizePlanRecord(record, index) {
+    const subjectText = record.track || record["首选科目"] || record.subject || "";
+    const track = subjectText === "history" || String(subjectText).includes("历史") || String(subjectText).includes("文史")
+      ? "history"
+      : subjectText === "physical" || String(subjectText).includes("物理") || String(subjectText).includes("理工")
+        ? "physical"
+        : "";
+    return {
+      id: record.id || `plan-2026-${index}`,
+      year: record.year || record["年份"] || "2026",
+      school: record.school || record["院校名称"] || "",
+      schoolCode: record.schoolCode || record["院校代码"] || "",
+      group: record.group || record["院校专业组"] || "",
+      major: record.major || record["专业"] || "",
+      track,
+      batch: record.batch || record["批次"] || "本科",
+      plan: toNumber(record.plan || record["计划数"]),
+      minScore: toNumber(record.minScore || record["最低分"]),
+      minRank: toNumber(record.minRank || record["最低位次"]),
+      city: record.city || record["城市"] || "",
+      source: record.source || record["来源"] || "2026 年普通高校在陕招生计划汇编 OCR",
+      dataType: "2026 招生计划"
+    };
   }
 
   function applyFilters(rows) {
@@ -186,7 +217,7 @@
       .filter((row) => row.risk.tier !== "过低")
       .filter((row) => row.risk.tier !== "高风险" || els.riskMode.value === "bold")
       .sort((a, b) => {
-        const order = { "冲": 1, "稳": 2, "保": 3, "高风险": 4 };
+        const order = { "冲": 1, "稳": 2, "保": 3, "计划": 4, "高风险": 5 };
         return order[a.risk.tier] - order[b.risk.tier]
           || a.risk.sortScore - b.risk.sortScore
           || Number(b.year || 0) - Number(a.year || 0)
@@ -356,7 +387,7 @@
           source: get(record, ["来源", "source"]) || "用户导入官方表",
           dataType: "导入数据"
         };
-      }).filter((row) => row.school && (row.minScore || row.minRank));
+      }).filter((row) => row.school && (row.minScore || row.minRank || row.plan));
 
       els.importStatus.textContent = `已导入 ${importedRows.length} 条数据。`;
       run();

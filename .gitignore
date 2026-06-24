@@ -1,4 +1,6 @@
 .tools/
+tmp/
+output/
 *.log
 *.err.log
 *.zip

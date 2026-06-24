@@ -298,6 +298,7 @@ select:focus {
 .tier-冲 { background: var(--accent-2); }
 .tier-稳 { background: var(--accent-3); }
 .tier-保 { background: var(--accent); }
+.tier-计划 { background: #6f5b9a; }
 .tier-高风险 { background: #7f3348; }
 
 .card dl {
