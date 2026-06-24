@@ -1,5 +1,5 @@
 (function () {
-  const APP_VERSION = "20260625-score-display";
+  const APP_VERSION = "20260625-major-info";
   const data = window.SX_DATA || { admissions: [], segments: {}, sources: [], rules: {}, controlLines: {} };
   let importedRows = [];
   let builtInPlanRows = null;
@@ -226,6 +226,8 @@
       subjectReq: record.subjectReq || "",
       admissionType: record.admissionType || "",
       note: record.note || "",
+      duration: record.duration || record["学制"] || "",
+      tuition: record.tuition || record["学费"] || "",
       tags: record.tags || "",
       track: record.track || "",
       batch: record.batch || "本科批",
@@ -263,6 +265,8 @@
       city: record.city || record["城市"] || "",
       subjectReq: record.subjectReq || record["再选科目"] || record.subject || "",
       majorCode: record.majorCode || record["专业代码"] || "",
+      duration: record.duration || record["学制"] || "",
+      tuition: record.tuition || record["学费"] || "",
       note: record.note || record["备注"] || "",
       source: record.source || record["来源"] || "2026 年普通高校在陕招生计划汇编 OCR",
       dataType: "2026 招生计划"
@@ -381,10 +385,47 @@
           <div><dt>${escapeHtml(row.countLabel || "计划数")}</dt><dd>${formatNumber(row.plan)}</dd></div>
           <div><dt>数据依据</dt><dd>${escapeHtml(row.dataType || row.year || "")}</dd></div>
         </dl>
+        ${renderMajorInfo(row)}
         <div class="card-note">${escapeHtml(cardFootnote(row))}</div>
         <button class="add-btn" type="button" data-add="${escapeHtml(row.id)}">加入志愿表</button>
       </article>
     `).join("");
+  }
+
+  function renderMajorInfo(row) {
+    const items = majorInfoItems(row);
+    if (!items.length) return "";
+    return `
+      <div class="major-info" aria-label="专业信息">
+        ${items.map((item) => `
+          <div class="major-info-item${item.wide ? " major-info-wide" : ""}">
+            <span>${escapeHtml(item.label)}</span>
+            <strong>${escapeHtml(item.value)}</strong>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function majorInfoItems(row) {
+    return [
+      { label: "院校代码", value: row.schoolCode },
+      { label: "专业代码", value: row.majorCode },
+      { label: "选科要求", value: row.subjectReq },
+      { label: "招生类型", value: row.admissionType },
+      { label: "学制", value: row.duration },
+      { label: "学费", value: formatTuition(row.tuition) },
+      { label: "院校性质", value: row.schoolType },
+      { label: "备注", value: row.note, wide: true }
+    ].filter((item) => item.value);
+  }
+
+  function formatTuition(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/元|免费|待定/.test(text)) return text;
+    const number = toNumber(text);
+    return number ? `${formatNumber(number)} 元/年` : text;
   }
 
   function formatAdmissionValue(row, field) {
@@ -401,8 +442,6 @@
     return [
       row.group,
       row.major,
-      row.subjectReq,
-      row.admissionType,
       row.city,
       row.tags
     ].filter(Boolean).join(" · ") || row.dataType;
@@ -411,7 +450,6 @@
   function cardFootnote(row) {
     return [
       row.risk.reason,
-      row.note,
       row.source || row.dataType || "自定义数据"
     ].filter(Boolean).join(" · ");
   }
@@ -553,6 +591,12 @@
           schoolCode: get(record, ["院校代码", "院校代号", "schoolCode"]),
           group: get(record, ["院校专业组", "专业组", "group"]),
           major: get(record, ["专业", "专业名称", "major"]),
+          majorCode: get(record, ["专业代码", "专业代号", "majorCode"]),
+          subjectReq: get(record, ["选科要求", "再选科目", "科目要求", "subjectReq"]),
+          admissionType: get(record, ["招生类型", "录取类型", "admissionType"]),
+          duration: get(record, ["学制", "学制(年)", "duration"]),
+          tuition: get(record, ["学费", "学费(元)", "tuition"]),
+          note: get(record, ["备注", "专业备注", "note"]),
           track,
           batch: get(record, ["批次", "batch"]) || "本科",
           plan: toNumber(get(record, ["计划数", "招生计划", "plan"])),
@@ -597,9 +641,9 @@
 
   function downloadTemplate() {
     downloadCsv("陕西院校专业组导入模板.csv", [[
-      "年份", "批次", "首选科目", "院校代码", "院校名称", "院校专业组", "专业", "再选科目", "计划数", "最低分", "最低位次", "城市", "来源"
+      "年份", "批次", "首选科目", "院校代码", "院校名称", "院校专业组", "专业", "专业代码", "选科要求", "招生类型", "学制", "学费", "备注", "计划数", "最低分", "最低位次", "城市", "来源"
     ], [
-      "2026", "本科", "物理", "示例代码", "示例大学", "示例专业组01", "计算机类", "化学", "10", "600", "12000", "西安", "陕西省教育考试院/高校招生章程"
+      "2026", "本科", "物理", "示例代码", "示例大学", "示例专业组01", "计算机类", "01", "首选物理，再选化学", "普通类", "四年", "6000", "示例备注", "10", "600", "12000", "西安", "陕西省教育考试院/高校招生章程"
     ]]);
   }
 
