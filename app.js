@@ -1,4 +1,5 @@
 (function () {
+  const APP_VERSION = "20260625-score-display";
   const data = window.SX_DATA || { admissions: [], segments: {}, sources: [], rules: {}, controlLines: {} };
   let importedRows = [];
   let builtInPlanRows = null;
@@ -77,7 +78,7 @@
     const minRank = Number(row.minRank || 0);
     const minScore = Number(row.minScore || 0);
     if (!minRank && !minScore && Number(row.plan || 0)) {
-      return riskResult("计划", 0, 0, "2026 招生计划，需结合往年录取位次判断");
+      return riskResult("计划", 0, 0, "2026 招生计划暂无录取分/位次，需结合 2025 录取线判断");
     }
     if (!minRank || !userRank) {
       const diff = userScore - minScore;
@@ -137,7 +138,7 @@
     if (planLoadPromise) return planLoadPromise;
     planLoadPromise = (async () => {
       els.dataBadge.textContent = "加载计划中";
-      const response = await fetch("data/plan-2026.js", { cache: "force-cache" });
+      const response = await fetch(`data/plan-2026.js?v=${APP_VERSION}`, { cache: "force-cache" });
       if (!response.ok) throw new Error("2026 招生计划加载失败");
       builtInPlanRows = parseJsPayload(await response.text()).map(normalizePlanRecord);
       return builtInPlanRows;
@@ -150,7 +151,7 @@
     if (admissionLoadPromise) return admissionLoadPromise;
     admissionLoadPromise = (async () => {
       els.dataBadge.textContent = "加载2025录取线";
-      const response = await fetch("data/admission-2025.js", { cache: "force-cache" });
+      const response = await fetch(`data/admission-2025.js?v=${APP_VERSION}`, { cache: "force-cache" });
       if (!response.ok) throw new Error("2025 院校专业组录取线加载失败");
       builtInAdmissionRows = parseJsPayload(await response.text()).map(normalizeAdmissionRecord);
       return builtInAdmissionRows;
@@ -163,7 +164,7 @@
     if (majorLoadPromise) return majorLoadPromise;
     majorLoadPromise = (async () => {
       els.dataBadge.textContent = "加载专业录取线";
-      const response = await fetch("data/major-2025.js", { cache: "force-cache" });
+      const response = await fetch(`data/major-2025.js?v=${APP_VERSION}`, { cache: "force-cache" });
       if (!response.ok) throw new Error("2025 专业录取线加载失败");
       builtInMajorRows = parseJsPayload(await response.text()).map(normalizeAdmissionRecord);
       return builtInMajorRows;
@@ -375,8 +376,8 @@
           <span class="tier tier-${row.risk.tier}">${row.risk.tier}</span>
         </div>
         <dl>
-          <div><dt>最低分</dt><dd>${formatNumber(row.minScore)}</dd></div>
-          <div><dt>最低位次</dt><dd>${formatNumber(row.minRank)}</dd></div>
+          <div><dt>录取最低分</dt><dd>${formatAdmissionValue(row, "minScore")}</dd></div>
+          <div><dt>录取最低位次</dt><dd>${formatAdmissionValue(row, "minRank")}</dd></div>
           <div><dt>${escapeHtml(row.countLabel || "计划数")}</dt><dd>${formatNumber(row.plan)}</dd></div>
           <div><dt>数据依据</dt><dd>${escapeHtml(row.dataType || row.year || "")}</dd></div>
         </dl>
@@ -384,6 +385,16 @@
         <button class="add-btn" type="button" data-add="${escapeHtml(row.id)}">加入志愿表</button>
       </article>
     `).join("");
+  }
+
+  function formatAdmissionValue(row, field) {
+    const value = Number(row[field] || 0);
+    if (value > 0) return formatNumber(value);
+    return isPlanOnly(row) ? "待录取" : "--";
+  }
+
+  function isPlanOnly(row) {
+    return String(row.dataType || "").includes("招生计划") && !Number(row.minScore || 0) && !Number(row.minRank || 0);
   }
 
   function cardSubtitle(row) {
